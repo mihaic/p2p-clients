@@ -143,6 +143,8 @@ int main(int argc, char* argv[])
     //ss.active_tracker_limit = 100000;
     //ss.incoming_starts_queued_torrents = true;
     s.set_settings( ss );
+    s.set_upload_rate_limit(1000000);
+    s.set_local_upload_rate_limit(1000000);
    
     // check if we have to set a random port
     srand((unsigned)time(0));
