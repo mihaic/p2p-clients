@@ -62,6 +62,8 @@ int main(int argc, char* argv[])
     bool seeder = false;
     int slots = 4;
     bool sequential = false;
+    bool has_rate_limit = false;
+    int rate_limit = -1;
 
     for (int i=1; i<argc; ++i)
     {
@@ -119,6 +121,16 @@ int main(int argc, char* argv[])
                 case 'q':
                     sequential = true;
                     break;
+                case 'l':
+		    has_rate_limit = true;
+                    i++;
+                    if( i < argc )
+                        rate_limit = atoi(argv[i]);
+                    else {
+                        std::cerr << "-l requires an argument\n";
+                        return -1;
+                    }
+                    break;
                 default:
                     std::cerr << "Unknown option: " << argv[i] << "\n";
                     return -1;
@@ -143,8 +155,11 @@ int main(int argc, char* argv[])
     //ss.active_tracker_limit = 100000;
     //ss.incoming_starts_queued_torrents = true;
     s.set_settings( ss );
-    s.set_upload_rate_limit(1000000);
-    s.set_local_upload_rate_limit(1000000);
+    if (has_rate_limit) {
+        s.set_upload_rate_limit(rate_limit);
+        s.set_local_upload_rate_limit(rate_limit);
+        std::cerr << "Rate limit " << rate_limit << std::endl;
+    }
    
     // check if we have to set a random port
     srand((unsigned)time(0));
