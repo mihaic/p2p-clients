@@ -17,4 +17,6 @@ fi
 
 
 echo g++ $FLAGS $CFLAGS $LDFLAGS -o libtorrent
-g++ $FLAGS $CFLAGS $LDFLAGS -o libtorrent client.cpp
+g++ -c $FLAGS $CFLAGS $LDFLAGS -o libtorrent.o client.cpp
+g++ libtorrent.o -l boost_system -l torrent-rasterbar -o libtorrent
+rm libtorrent.o

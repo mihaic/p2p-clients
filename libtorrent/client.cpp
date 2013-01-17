@@ -1,3 +1,4 @@
+#include <dirent.h>
 #include <iostream>
 #include <fstream>
 #include <iterator>
@@ -21,10 +22,10 @@
 #include <boost/filesystem.hpp>
 #include <boost/asio.hpp>
 
-#include "libtorrent/entry.hpp"
-#include "libtorrent/bencode.hpp"
-#include "libtorrent/session.hpp"
-#include "libtorrent/peer_info.hpp"
+#include <libtorrent/entry.hpp>
+#include <libtorrent/bencode.hpp>
+#include <libtorrent/session.hpp>
+#include <libtorrent/peer_info.hpp>
 
 
 float difftime( const struct timeval& from, const struct timeval& to ) {
@@ -139,8 +140,8 @@ int main(int argc, char* argv[])
     ss.active_downloads = -1;
     ss.active_seeds = -1;
     ss.active_limit = 100000;
-    ss.active_tracker_limit = 100000;
-    ss.incoming_starts_queued_torrents = true;
+    //ss.active_tracker_limit = 100000;
+    //ss.incoming_starts_queued_torrents = true;
     s.set_settings( ss );
    
     // check if we have to set a random port
@@ -178,7 +179,7 @@ int main(int argc, char* argv[])
             std::cerr << ec.message() << std::endl;
             return 1;
         }
-        h.apply_ip_filter(false);
+        //h.apply_ip_filter(false);
         handles.push_back(h);
     }
 
@@ -258,7 +259,7 @@ int main(int argc, char* argv[])
             return 0;
         // This sleep is actually not the usual Linux sleep, but the one defined in libtorrent, which takes usecs
         // Going for 999 usec to compensate a little for execution time.
-        sleep(999);
+        sleep(1);
     }
 
     return 0;
