@@ -26,6 +26,7 @@
 #include <libtorrent/bencode.hpp>
 #include <libtorrent/session.hpp>
 #include <libtorrent/peer_info.hpp>
+#include <libtorrent/ip_filter.hpp>
 
 
 float difftime( const struct timeval& from, const struct timeval& to ) {
@@ -64,6 +65,8 @@ int main(int argc, char* argv[])
     bool sequential = false;
     bool has_rate_limit = false;
     int rate_limit = -1;
+    bool helper_mode = false;
+    ip_filter ipf;
 
     for (int i=1; i<argc; ++i)
     {
@@ -121,6 +124,9 @@ int main(int argc, char* argv[])
                 case 'q':
                     sequential = true;
                     break;
+                case 'h':
+                    helper_mode = true;
+                    break;
                 case 'l':
 		    has_rate_limit = true;
                     i++;
@@ -159,6 +165,9 @@ int main(int argc, char* argv[])
         s.set_upload_rate_limit(rate_limit);
         s.set_local_upload_rate_limit(rate_limit);
         std::cerr << "Rate limit " << rate_limit << std::endl;
+    }
+    if (helper_mode) {
+        ipf = ip_filter();
     }
    
     // check if we have to set a random port
@@ -242,13 +251,20 @@ int main(int argc, char* argv[])
                 }
                 std::cerr << " - failed " << ae.fails << " times - last_error = " << ae.last_error << " - message = " << ae.message << std::endl;
             }
+	    */
             std::vector<peer_info> v_pe;
-            h.get_peer_info( v_pe );
-            for( std::vector<peer_info>::iterator it = v_pe.begin(); it != v_pe.end(); it++ ) {
-                peer_info& pe = *it;
-                if( pe.seed )
-                    std::cerr << "-- Seed: ";
-                else
+	    if (helper_mode) {
+                h.get_peer_info( v_pe );
+                for( std::vector<peer_info>::iterator it = v_pe.begin(); it != v_pe.end(); it++ ) {
+                    peer_info& pe = *it;
+                    if( pe.seed ) {
+                        //std::cerr << "-- Seed: ";
+			ipf.add_rule(pe.ip.address(), pe.ip.address(),
+					ip_filter::blocked);
+		    }
+		}
+	    }
+                /*else
                     std::cerr << "-- Peer: ";
                 std::cerr << pe.ip.address().to_string() << ":" << pe.ip.port() << " - queue req down/up " << pe.download_queue_length << "/" << pe.upload_queue_length << " - failed " << pe.failcount << " - has " << pe.num_pieces << " pieces" << std::endl;
             }
@@ -276,7 +292,7 @@ int main(int argc, char* argv[])
             return 0;
         // This sleep is actually not the usual Linux sleep, but the one defined in libtorrent, which takes usecs
         // Going for 999 usec to compensate a little for execution time.
-        sleep(1);
+        sleep(999);
     }
 
     return 0;
