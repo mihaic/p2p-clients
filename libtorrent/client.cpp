@@ -46,10 +46,10 @@ int main(int argc, char* argv[])
     //handles_t handles;
     struct timeval tstart, tend;
     gettimeofday( &tstart, NULL );
-    if (argc > 8 || argc < 2)
+    if (argc < 2)
     {
-        std::cerr << "usage: ./simple_client [-s:-o:-n:-d] torrent-file\n\t\t"
-                                "\t\t-s  seeder: don't exist after download finishes\n"
+        std::cerr << "usage: ./simple_client [-s:-o:-n:-d] torrent-file\n"
+                                "\t\t-s  seeder: don't exit after download finishes\n"
                                 "\t\t-o  download directory\n"
                                 "\t\t-n  number of upload slots\n"
                                 "\t\t-d  directory containing torrent files to seed\n"
@@ -66,6 +66,8 @@ int main(int argc, char* argv[])
     bool has_rate_limit = false;
     int rate_limit = -1;
     bool helper_mode = false;
+    bool super_seeding = false;
+    bool share_mode = false;
     ip_filter ipf;
 
     for (int i=1; i<argc; ++i)
@@ -76,7 +78,7 @@ int main(int argc, char* argv[])
         {
             switch (argv[i][1])
             {
-                case 's': 
+                case 's':
                     std::cerr << "Seeding mode" << std::endl;
                     seeder = true;
                     break;
@@ -127,6 +129,13 @@ int main(int argc, char* argv[])
                 case 'h':
                     helper_mode = true;
                     break;
+                case 'u':
+                    super_seeding = true;
+                    break;
+                case 'm':
+                    std::cerr << "Share mode" << std::endl;
+                    share_mode = true;
+                    break;
                 case 'l':
 		    has_rate_limit = true;
                     i++;
@@ -143,7 +152,7 @@ int main(int argc, char* argv[])
             }
         }
     }
-   
+
     if (save_path == "./")
         std::cerr << "Warning: missing download directory param\n";
 
@@ -158,18 +167,25 @@ int main(int argc, char* argv[])
     ss.active_downloads = -1;
     ss.active_seeds = -1;
     ss.active_limit = 100000;
+    if (has_rate_limit) {
+        ss.upload_rate_limit = rate_limit;
+        ss.local_upload_rate_limit = rate_limit;
+    }
+    ss.unchoke_slots_limit = -1; // instead of s.set_max_uploads(30);
+    //ss.strict_super_seeding = super_seeding;
     //ss.active_tracker_limit = 100000;
     //ss.incoming_starts_queued_torrents = true;
     s.set_settings( ss );
     if (has_rate_limit) {
-        s.set_upload_rate_limit(rate_limit);
-        s.set_local_upload_rate_limit(rate_limit);
-        std::cerr << "Rate limit " << rate_limit << std::endl;
+	ss = s.settings();
+	std::cerr << "Upload rate limit " << ss.upload_rate_limit << std::endl;
+	std::cerr << "Local upload rate limit " << ss.local_upload_rate_limit
+		<< std::endl;
     }
     if (helper_mode) {
         ipf = ip_filter();
     }
-   
+
     // check if we have to set a random port
     srand((unsigned)time(0));
     int random_integer;
@@ -177,17 +193,19 @@ int main(int argc, char* argv[])
     int range=(highest-lowest)+1;
     int listen_port = lowest+int(range*rand()/(RAND_MAX + 1.0));
 
-    s.listen_on(std::make_pair(lowest, highest));
-    s.set_max_uploads(30);
+    error_code ec;
+    s.listen_on(std::make_pair(lowest, highest), ec);
 
     std::list<torrent_handle> handles;
-   
+
     for( std::list<std::string>::iterator i = torrents.begin(); i != torrents.end(); i++ ) {
         std::string& torrent = *i;
         std::cerr << "Opening " << torrent << "\n";
         add_torrent_params p;
         p.save_path = save_path;
-        error_code ec;
+	if (share_mode) {
+	    p.flags = add_torrent_params::flag_share_mode;
+	}
         p.ti = new torrent_info(torrent, ec);
         if (ec)
         {
@@ -206,6 +224,9 @@ int main(int argc, char* argv[])
             return 1;
         }
         //h.apply_ip_filter(false);
+	if (super_seeding) {
+	    h.super_seeding(super_seeding);
+	}
         handles.push_back(h);
     }
 
@@ -272,7 +293,7 @@ int main(int argc, char* argv[])
             */
         }
         progress /= handles.size();
-       
+
         float dtime = difftime(tstart, tend);
         // %f for time, since 100 times "2 seconds" is not very useful
         // %0.2f for progress, since sub-percentage progress is available and hence more accurate; no more precision than 2 since at that point libtorrent itself
@@ -283,10 +304,10 @@ int main(int argc, char* argv[])
          (float)(progress / 10000.f),
          (long int)up,
          (long int)down);
-        
+
         up = newup;
         down = newdown;
-       
+
         // check if complete
         if (allComplete && !seeder)
             return 0;
