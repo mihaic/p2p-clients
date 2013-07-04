@@ -22,6 +22,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/asio.hpp>
 
+#include <libtorrent/alert_types.hpp>
 #include <libtorrent/entry.hpp>
 #include <libtorrent/bencode.hpp>
 #include <libtorrent/session.hpp>
@@ -127,6 +128,7 @@ int main(int argc, char* argv[])
                     sequential = true;
                     break;
                 case 'h':
+                    std::cerr << "Disconnecting seeders" << std::endl;
                     helper_mode = true;
                     break;
                 case 'u':
@@ -162,6 +164,9 @@ int main(int argc, char* argv[])
     }
 
     session s;
+    s.stop_lsd();
+    s.stop_upnp();
+    s.stop_natpmp();
     struct session_settings ss = s.settings();
     ss.allow_multiple_connections_per_ip = true;
     ss.active_downloads = -1;
@@ -184,6 +189,10 @@ int main(int argc, char* argv[])
     }
     if (helper_mode) {
         ipf = ip_filter();
+	ipf.add_rule(asio::ip::address::from_string("95.211.198.140"),
+			asio::ip::address::from_string("95.211.198.140"),
+			ip_filter::blocked);
+	s.set_ip_filter(ipf);
     }
 
     // check if we have to set a random port
@@ -204,7 +213,7 @@ int main(int argc, char* argv[])
         add_torrent_params p;
         p.save_path = save_path;
 	if (share_mode) {
-	    p.flags = add_torrent_params::flag_share_mode;
+	    p.flags |= add_torrent_params::flag_share_mode;
 	}
         p.ti = new torrent_info(torrent, ec);
         if (ec)
@@ -223,7 +232,6 @@ int main(int argc, char* argv[])
             std::cerr << ec.message() << std::endl;
             return 1;
         }
-        //h.apply_ip_filter(false);
 	if (super_seeding) {
 	    h.super_seeding(super_seeding);
 	}
@@ -237,19 +245,32 @@ int main(int argc, char* argv[])
     long int up = 0;
     float progress = 0.0;
     fprintf(stderr,"time\t%%complete\tup B\tdown B\n");
+    bool first_piece_downloaded = false; //FIXME only works for one torrent
+    torrent_status ts;
+    s.set_alert_mask(alert::all_categories);
     while (true)
     {
+	while (true)
+	{
+	    std::auto_ptr<alert> a = s.pop_alert();
+	    if (a.get() == NULL)
+	    {
+		    break;
+	    }
+	    std::cerr << a->message() << "\n";
+	}
         gettimeofday(&tend, NULL);
-        long int newup = s.status().total_upload;
-        long int newdown = s.status().total_download;
+        long int newup = s.status().total_payload_upload;
+        long int newdown = s.status().total_payload_download;
         up = newup - up;
         down = newdown - down;
         bool allComplete = true;
         progress = 0.0;
         for( std::list<torrent_handle>::iterator i = handles.begin(); i != handles.end(); i++ ) {
             torrent_handle& h = *i;
-            progress += h.status().progress_ppm;
-            if(h.status().state != 5)
+	    ts = h.status();
+            progress += ts.progress_ppm;
+            if(ts.state != 5)
                 allComplete = false;
             // SCHAAP: If you want quite extended info on your torrents...
             /*
@@ -273,18 +294,21 @@ int main(int argc, char* argv[])
                 std::cerr << " - failed " << ae.fails << " times - last_error = " << ae.last_error << " - message = " << ae.message << std::endl;
             }
 	    */
-            std::vector<peer_info> v_pe;
-	    if (helper_mode) {
-                h.get_peer_info( v_pe );
-                for( std::vector<peer_info>::iterator it = v_pe.begin(); it != v_pe.end(); it++ ) {
-                    peer_info& pe = *it;
-                    if( pe.seed ) {
-                        //std::cerr << "-- Seed: ";
-			ipf.add_rule(pe.ip.address(), pe.ip.address(),
-					ip_filter::blocked);
-		    }
-		}
-	    }
+//	    if (helper_mode) {
+//		std::vector<peer_info> v_pe;
+//		ipf = s.get_ip_filter();
+//                h.get_peer_info( v_pe );
+//                for( std::vector<peer_info>::iterator it = v_pe.begin(); it != v_pe.end(); it++ ) {
+//                    peer_info& pe = *it;
+//                    if( ipf.access(pe.ip.address()) != 0 ) {
+//			std::cerr << "-- should not be connected to " <<
+//				pe.ip.address() << "\n";
+//			ipf.add_rule(pe.ip.address(), pe.ip.address(),
+//					ip_filter::blocked);
+//			s.set_ip_filter(ipf);
+//		    }
+//		}
+//	    }
                 /*else
                     std::cerr << "-- Peer: ";
                 std::cerr << pe.ip.address().to_string() << ":" << pe.ip.port() << " - queue req down/up " << pe.download_queue_length << "/" << pe.upload_queue_length << " - failed " << pe.failcount << " - has " << pe.num_pieces << " pieces" << std::endl;
@@ -304,6 +328,11 @@ int main(int argc, char* argv[])
          (float)(progress / 10000.f),
          (long int)up,
          (long int)down);
+
+	if (!first_piece_downloaded && ts.num_pieces > 0) {
+	        first_piece_downloaded = true;
+	        std::cerr << "First " << dtime << "\n";
+	}
 
         up = newup;
         down = newdown;
