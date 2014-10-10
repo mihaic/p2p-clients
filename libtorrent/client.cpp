@@ -69,6 +69,7 @@ int main(int argc, char* argv[])
     bool helper_mode = false;
     bool super_seeding = false;
     bool share_mode = false;
+    bool fake_seeder = false;
     ip_filter ipf;
 
     for (int i=1; i<argc; ++i)
@@ -132,11 +133,27 @@ int main(int argc, char* argv[])
                     helper_mode = true;
                     break;
                 case 'u':
+		    std::cerr << "Superseeding" << std::endl;
                     super_seeding = true;
                     break;
                 case 'm':
                     std::cerr << "Share mode" << std::endl;
                     share_mode = true;
+                    break;
+                case 'f':
+                    std::cerr << "Fake seed mode" << std::endl;
+                    fake_seeder = true;
+                    break;
+                case 't':
+                    i++;
+		    int wave;
+                    if( i < argc )
+                        wave = atoi(argv[i]);
+                    else {
+                        std::cerr << "-t requires an argument\n";
+                        return -1;
+                    }
+                    std::cerr << "Late leecher " << wave << std::endl;
                     break;
                 case 'l':
 		    has_rate_limit = true;
@@ -164,14 +181,12 @@ int main(int argc, char* argv[])
     }
 
     session s;
-    s.stop_lsd();
-    s.stop_upnp();
-    s.stop_natpmp();
     struct session_settings ss = s.settings();
     ss.allow_multiple_connections_per_ip = true;
     ss.active_downloads = -1;
     ss.active_seeds = -1;
     ss.active_limit = 100000;
+    ss.share_mode_target = 1;
     if (has_rate_limit) {
         ss.upload_rate_limit = rate_limit;
         ss.local_upload_rate_limit = rate_limit;
@@ -180,6 +195,17 @@ int main(int argc, char* argv[])
     //ss.strict_super_seeding = super_seeding;
     //ss.active_tracker_limit = 100000;
     //ss.incoming_starts_queued_torrents = true;
+
+    // Disable uTP
+    ss.enable_outgoing_utp = false;
+    ss.enable_incoming_utp = false;
+
+    // Choose rarest pieces from the start
+    ss.initial_picker_threshold = 0;
+
+    // Disable hash checking
+    ss.disable_hash_checks = true;
+
     s.set_settings( ss );
     if (has_rate_limit) {
 	ss = s.settings();
@@ -187,23 +213,19 @@ int main(int argc, char* argv[])
 	std::cerr << "Local upload rate limit " << ss.local_upload_rate_limit
 		<< std::endl;
     }
-    if (helper_mode) {
-        ipf = ip_filter();
-	ipf.add_rule(asio::ip::address::from_string("95.211.198.140"),
-			asio::ip::address::from_string("95.211.198.140"),
-			ip_filter::blocked);
-	s.set_ip_filter(ipf);
-    }
-
-    // check if we have to set a random port
-    srand((unsigned)time(0));
-    int random_integer;
-    int lowest=6666, highest=8888;
-    int range=(highest-lowest)+1;
-    int listen_port = lowest+int(range*rand()/(RAND_MAX + 1.0));
+//    if (helper_mode) {
+//        ipf = ip_filter();
+//	ipf.add_rule(asio::ip::address::from_string("95.211.198.140"),
+//			asio::ip::address::from_string("95.211.198.140"),
+//			ip_filter::blocked);
+//	s.set_ip_filter(ipf);
+//    }
+    //s.stop_lsd();
+    s.stop_upnp();
+    s.stop_natpmp();
 
     error_code ec;
-    s.listen_on(std::make_pair(lowest, highest), ec);
+    s.listen_on(std::make_pair(0, 0), ec);
 
     std::list<torrent_handle> handles;
 
@@ -212,9 +234,18 @@ int main(int argc, char* argv[])
         std::cerr << "Opening " << torrent << "\n";
         add_torrent_params p;
         p.save_path = save_path;
+
+	// Discard data
+	p.storage = disabled_storage_constructor;
+
 	if (share_mode) {
 	    p.flags |= add_torrent_params::flag_share_mode;
+	} else {
+	    if (seeder && !fake_seeder) {
+	        p.flags |= add_torrent_params::flag_seed_mode;
+	    }
 	}
+
         p.ti = new torrent_info(torrent, ec);
         if (ec)
         {
@@ -247,7 +278,7 @@ int main(int argc, char* argv[])
     fprintf(stderr,"time\t%%complete\tup B\tdown B\n");
     bool first_piece_downloaded = false; //FIXME only works for one torrent
     torrent_status ts;
-    s.set_alert_mask(alert::all_categories);
+    //s.set_alert_mask(alert::all_categories);
     while (true)
     {
 	while (true)
@@ -298,8 +329,11 @@ int main(int argc, char* argv[])
 //		std::vector<peer_info> v_pe;
 //		ipf = s.get_ip_filter();
 //                h.get_peer_info( v_pe );
-//                for( std::vector<peer_info>::iterator it = v_pe.begin(); it != v_pe.end(); it++ ) {
+//		std::cerr << "Peers\n";
+//		for( std::vector<peer_info>::iterator it = v_pe.begin(); it !=
+//				v_pe.end(); it++ ) {
 //                    peer_info& pe = *it;
+//		    std::cerr << pe.pid << " " << pe.progress << "\n";
 //                    if( ipf.access(pe.ip.address()) != 0 ) {
 //			std::cerr << "-- should not be connected to " <<
 //				pe.ip.address() << "\n";
@@ -333,6 +367,8 @@ int main(int argc, char* argv[])
 	        first_piece_downloaded = true;
 	        std::cerr << "First " << dtime << "\n";
 	}
+	std::cerr << "Transfer: " << dtime << " " << newup << " " << newdown <<
+		std::endl;
 
         up = newup;
         down = newdown;
